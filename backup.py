@@ -59,6 +59,9 @@ def parse_rsync_arg(arg):
 	return user,host,path
 
 def main(SRC,DEST,options):
+
+	maxWeeklySnapshots = 2 # move this to the command line!
+
 	logger = logging.getLogger("backup.main")
 
 	if options.debug:
@@ -111,27 +114,66 @@ def main(SRC,DEST,options):
 		rsync_cmd += "%s:" % host
 	rsync_cmd += "%s/incomplete.snapshot" % snapshots_root
 
-	# Construct the `mv && rm && ln` command to be executed after the rsync
-	# command completes successfully.
-	mv_cmd = ""
-	if host is not None:
-		mv_cmd += "ssh "
-		if user is not None:
-			mv_cmd += "%s@" % user
-		mv_cmd += '%s "' % host
-	mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root,snapshots_root,date)	
+	#Create directory structure for backups (if non existend)
+	if not os.path.isdir(snapshots_root + '/daily'):
+		os.makedirs(snapshots_root + '/daily')
+
+	if not os.path.isdir(snapshots_root + '/weekly'):
+		os.makedirs(snapshots_root + '/weekly')
+
+	if not os.path.isdir(snapshots_root + '/monthly'):
+		os.makedirs(snapshots_root + '/monthly')
+
+	if not os.path.isdir(snapshots_root + '/yearly'):
+		os.makedirs(snapshots_root + '/yearly')
+
+	# Decide where to place the backup (daily, weekly, monthly, etc)
+    # TODO check if we missed a weekly/monthly backup if the script
+    #      didn't run the day(s) before.
+	from datetime import date
+
+	today = date.today()
+	if today.month == 1 and today.day == 1:
+		target = 'yearly/' + str(today.year)
+	elif today.day == 1:
+		target = 'monthly/' + str(today.month)
+	elif today.isoweekday() == 1:
+		target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+
+		#check if we would exceed the max amount of weekly snapshots:
+		weeklyList = []
+		for name in os.listdir(snapshots_root+'/weekly'):
+		    if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
+		    	weeklyList.append(name)
+
+		while len(weeklyList) > (maxWeeklySnapshots -1):
+			weeklyList.sort()
+			rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weeklyList.pop(0))
+			exit_status = subprocess.call(rm_cmd, shell=True)
+			if exit_status !=0:
+				sys.exit(exit_status)
+	else:
+		target = 'daily/' + str(today.isoweekday())
+
+	#construct move commands:
+	mv_cmd = ''
+
+	#remove the old source if it already exist
+	if os.path.isdir(snapshots_root + '/' + target + '.snapshot'):
+		mv_cmd += 'rm -rf %s/%s.snapshot &&' % (snapshots_root,target)
+
+	mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root,snapshots_root,target)
 	mv_cmd += "&& rm -f %s/latest.snapshot " % snapshots_root
-	mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (date,snapshots_root)
+	mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (target,snapshots_root)
+
 	if host is not None:
 		mv_cmd += '"'
-	
-	print rsync_cmd
+
 	exit_status = subprocess.call(rsync_cmd, shell=True)
 	if exit_status != 0:
 		sys.exit(exit_status)
-	
+
 	if not options.debug:
-		print mv_cmd
 		exit_status = subprocess.call(mv_cmd, shell=True)
 		if exit_status != 0:
 			sys.exit(exit_status)

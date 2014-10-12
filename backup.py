@@ -1,7 +1,25 @@
 #!/usr/bin/env python
 """
-A script for making incremental snapshot backups of directories using rsync.
-See README.markdown for instructions.
+Usage:
+  $ python backup.py SRC DST
+  SRC and DST can be ssh or local paths
+
+
+  Make sure the DST path already exists, the dir
+  will not be created by the script.
+
+  NOTE: When backing up via SSH also create the following
+  dir structure:
+  <backup dir>/daily
+           ,,/weekly
+           ,,/monthly
+           ,,/yearly
+
+TODO NIELS:
+    Refactor code
+    Make a log file
+    Send an email upon error in the log file
+    add max number of weekly backups to command line
 
 """
 import datetime
@@ -114,18 +132,22 @@ def main(SRC,DEST,options):
 		rsync_cmd += "%s:" % host
 	rsync_cmd += "%s/incomplete.snapshot" % snapshots_root
 
-	#Create directory structure for backups (if non existend)
-	if not os.path.isdir(snapshots_root + '/daily'):
-		os.makedirs(snapshots_root + '/daily')
 
-	if not os.path.isdir(snapshots_root + '/weekly'):
-		os.makedirs(snapshots_root + '/weekly')
+    #Create directory structure for backups (if non existend) only local
+    if host is None:
+        if not os.path.isdir(snapshots_root + '/daily'):
+            os.makedirs(snapshots_root + '/daily')
 
-	if not os.path.isdir(snapshots_root + '/monthly'):
-		os.makedirs(snapshots_root + '/monthly')
+        if not os.path.isdir(snapshots_root + '/weekly'):
+            os.makedirs(snapshots_root + '/weekly')
 
-	if not os.path.isdir(snapshots_root + '/yearly'):
-		os.makedirs(snapshots_root + '/yearly')
+        if not os.path.isdir(snapshots_root + '/monthly'):
+            os.makedirs(snapshots_root + '/monthly')
+
+        if not os.path.isdir(snapshots_root + '/yearly'):
+            os.makedirs(snapshots_root + '/yearly')
+    else:
+        print 'REMEMBER TO CREATE THE REMOTE DIRS daily, weekly, monthly, yearly'
 
 	# Decide where to place the backup (daily, weekly, monthly, etc)
     # TODO check if we missed a weekly/monthly backup if the script

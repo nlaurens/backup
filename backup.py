@@ -60,7 +60,7 @@ def parse_rsync_arg(arg):
 
 def main(SRC,DEST,options):
 
-	maxWeeklySnapshots = 2 # move this to the command line!
+	maxWeeklySnapshots = 5 # move this to the command line!
 
 	logger = logging.getLogger("backup.main")
 

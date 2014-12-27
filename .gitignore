@@ -1,3 +1,6 @@
 *~
 *.pyc
 *.swp
+
+scripts/*
+!scripts/example.sh

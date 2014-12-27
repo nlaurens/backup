@@ -1,7 +1,25 @@
 #!/usr/bin/env python
 """
-A script for making incremental snapshot backups of directories using rsync.
-See README.markdown for instructions.
+Usage:
+  $ python backup.py SRC DST
+  SRC and DST can be ssh or local paths
+
+
+  Make sure the DST path already exists, the dir
+  will not be created by the script.
+
+  NOTE: When backing up via SSH also create the following
+  dir structure:
+  <backup dir>/daily
+           ,,/weekly
+           ,,/monthly
+           ,,/yearly
+
+TODO NIELS:
+    Refactor code
+    Make a log file
+    Send an email upon error in the log file
+    add max number of weekly backups to command line
 
 """
 import datetime
@@ -52,13 +70,16 @@ def parse_rsync_arg(arg):
 		logger.debug("This is a local path.")
 		user = None
 		host = None
-		path = os.path.abspath(os.path.expanduser(arg))
+		path = os.path.abspath(os.path.expanduser(arg.strip()))
 	logger.debug("User: %s" % user)
 	logger.debug("Host: %s" % host)
 	logger.debug("Path: %s" % path)
 	return user,host,path
 
 def main(SRC,DEST,options):
+
+	maxWeeklySnapshots = 5 # move this to the command line!
+
 	logger = logging.getLogger("backup.main")
 
 	if options.debug:
@@ -111,27 +132,76 @@ def main(SRC,DEST,options):
 		rsync_cmd += "%s:" % host
 	rsync_cmd += "%s/incomplete.snapshot" % snapshots_root
 
-	# Construct the `mv && rm && ln` command to be executed after the rsync
-	# command completes successfully.
-	mv_cmd = ""
+
+    #Create directory structure for backups (if non existend) only local
+    if host is None:
+        if not os.path.isdir(snapshots_root + '/daily'):
+            os.makedirs(snapshots_root + '/daily')
+
+        if not os.path.isdir(snapshots_root + '/weekly'):
+            os.makedirs(snapshots_root + '/weekly')
+
+        if not os.path.isdir(snapshots_root + '/monthly'):
+            os.makedirs(snapshots_root + '/monthly')
+
+        if not os.path.isdir(snapshots_root + '/yearly'):
+            os.makedirs(snapshots_root + '/yearly')
+    else:
+        print 'REMEMBER TO CREATE THE REMOTE DIRS daily, weekly, monthly, yearly'
+
+	# Decide where to place the backup (daily, weekly, monthly, etc)
+    # TODO check if we missed a weekly/monthly backup if the script
+    #      didn't run the day(s) before.
+	from datetime import date
+
+	today = date.today()
+	if today.month == 1 and today.day == 1:
+		target = 'yearly/' + str(today.year)
+	elif today.day == 1:
+		target = 'monthly/' + str(today.month)
+	elif today.isoweekday() == 1:
+		target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+
+		#check if we would exceed the max amount of weekly snapshots:
+		weeklyList = []
+		for name in os.listdir(snapshots_root+'/weekly'):
+		    if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
+		    	weeklyList.append(name)
+
+		while len(weeklyList) > (maxWeeklySnapshots -1):
+			weeklyList.sort()
+			rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weeklyList.pop(0))
+			exit_status = subprocess.call(rm_cmd, shell=True)
+			if exit_status !=0:
+				sys.exit(exit_status)
+	else:
+		target = 'daily/' + str(today.isoweekday())
+
+	#construct move commands:
 	if host is not None:
-		mv_cmd += "ssh "
+		mv_cmd = 'ssh '
 		if user is not None:
 			mv_cmd += "%s@" % user
 		mv_cmd += '%s "' % host
-	mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root,snapshots_root,date)	
+	else:
+		mv_cmd = ''
+
+	#remove the old source if it already exist
+	if os.path.isdir(snapshots_root + '/' + target + '.snapshot'):
+		mv_cmd += 'rm -rf %s/%s.snapshot &&' % (snapshots_root,target)
+
+	mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root,snapshots_root,target)
 	mv_cmd += "&& rm -f %s/latest.snapshot " % snapshots_root
-	mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (date,snapshots_root)
+	mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (target,snapshots_root)
+
 	if host is not None:
 		mv_cmd += '"'
-	
-	print rsync_cmd
+
 	exit_status = subprocess.call(rsync_cmd, shell=True)
 	if exit_status != 0:
 		sys.exit(exit_status)
-	
+
 	if not options.debug:
-		print mv_cmd
 		exit_status = subprocess.call(mv_cmd, shell=True)
 		if exit_status != 0:
 			sys.exit(exit_status)

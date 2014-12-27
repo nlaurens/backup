@@ -156,7 +156,13 @@ def main(SRC,DEST,options):
 		target = 'daily/' + str(today.isoweekday())
 
 	#construct move commands:
-	mv_cmd = ''
+	if host is not None:
+		mv_cmd = 'ssh '
+		if user is not None:
+			mv_cmd += "%s@" % user
+		mv_cmd += '%s "' % host
+	else:
+		mv_cmd = ''
 
 	#remove the old source if it already exist
 	if os.path.isdir(snapshots_root + '/' + target + '.snapshot'):

@@ -52,7 +52,7 @@ def parse_rsync_arg(arg):
 		logger.debug("This is a local path.")
 		user = None
 		host = None
-		path = os.path.abspath(os.path.expanduser(arg))
+		path = os.path.abspath(os.path.expanduser(arg.strip()))
 	logger.debug("User: %s" % user)
 	logger.debug("Host: %s" % host)
 	logger.debug("Path: %s" % path)

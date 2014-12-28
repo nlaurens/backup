@@ -14,8 +14,8 @@ TODO NIELS:
     Send an email upon error in the log file
     add max number of weekly backups to command line
     refactor rm_cmd (from #backups weekly) to a sep. function.
-    Test SRC/DST for trailing / (shouldn't be there!)
-
+    Fix bug in weeknumbers (only 1 digit!)
+    Figure out if shell=True is needed (is a security alert).
 """
 import datetime
 import sys
@@ -173,8 +173,14 @@ def get_target(snapshots_root):
     #      didn't run the day(s) before.
     from datetime import date
 
-    today = date(2014,12,26) # Used for testing the rotation
-    #today = date.today()
+    #today = date(2014,12,30) # Used for testing the rotation
+    today = date.today()
+
+    if today != date.today():
+        print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        print 'WARNING DEBUGING DATE STILL ON!!!'
+        print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+
     if today.month == 1 and today.day == 1:
         target = 'yearly/' + str(today.year)
     elif today.day == 1:
@@ -183,17 +189,19 @@ def get_target(snapshots_root):
         target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
 
         #check if we would exceed the max amount of weekly snapshots:
-        weekly_list = []
-        for name in os.listdir(snapshots_root+'/weekly'):
-            if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
-                weekly_list.append(name)
+        # we don't do this (yet) for remote backups.
+        if host is None:
+            weekly_list = []
+            for name in os.listdir(snapshots_root+'/weekly'):
+                if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
+                    weekly_list.append(name)
 
-        while len(weekly_list) > (maxWeeklySnapshots -1):
-            weekly_list.sort()
-            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
-            exit_status = subprocess.call(rm_cmd, shell=True)
-            if exit_status !=0:
-                sys.exit(exit_status)
+            while len(weekly_list) > (maxWeeklySnapshots -1):
+                weekly_list.sort()
+                rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
+                exit_status = subprocess.call(rm_cmd, shell=True)
+                if exit_status !=0:
+                    sys.exit(exit_status)
     else:
         target = 'daily/' + str(today.isoweekday())
 
@@ -201,14 +209,7 @@ def get_target(snapshots_root):
 
 
 def construct_mv_cmd(snapshots_root, host,user, target):
-    #construct move commands:
-    if host is not None:
-        mv_cmd = 'ssh '
-        if user is not None:
-            mv_cmd += "%s@" % user
-        mv_cmd += '%s "' % host
-    else:
-        mv_cmd = ''
+    mv_cmd = ''
 
     #remove the old source if it already exist
     if os.path.isdir(snapshots_root + '/' + target + '.snapshot'):
@@ -217,9 +218,6 @@ def construct_mv_cmd(snapshots_root, host,user, target):
     mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root,snapshots_root,target)
     mv_cmd += "&& rm -f %s/latest.snapshot " % snapshots_root
     mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (target,snapshots_root)
-
-    if host is not None:
-        mv_cmd += '"'
 
     return mv_cmd
 
@@ -264,11 +262,15 @@ if __name__ == "__main__":
 
     user,host,snapshots_root = parse_rsync_arg(DEST)
     rsync_options = construct_rsync_options(options)
-    rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
-
-    create_dirs(snapshots_root)
     target = get_target(snapshots_root)
 
-    #mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
-    #run_cmd(rsync_cmd)
-    #run_cmd(mv_cmd)
+    create_dirs(snapshots_root)
+
+    rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
+    mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
+
+    run_cmd(rsync_cmd)
+    if host is not None:
+        run_cmd(mv_cmd, ssh=True)
+    else:
+        run_cmd(mv_cmd)

@@ -54,7 +54,7 @@ def parse_rsync_arg(arg):
     """
     logger = logging.getLogger("backup.parse_rsync_arg")
     logger.debug("Parsing rsync arg %s" % arg)
-    parts = {}
+
     if is_remote(arg):
         logger.debug("This is a remote path")
         before_first_colon, after_first_colon = arg.split(':',1)
@@ -150,14 +150,14 @@ def get_target(snapshots_root):
         target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
 
         #check if we would exceed the max amount of weekly snapshots:
-        weeklyList = []
+        weekly_list = []
         for name in os.listdir(snapshots_root+'/weekly'):
             if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
-                weeklyList.append(name)
+                weekly_list.append(name)
 
-        while len(weeklyList) > (maxWeeklySnapshots -1):
-            weeklyList.sort()
-            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weeklyList.pop(0))
+        while len(weekly_list) > (maxWeeklySnapshots -1):
+            weekly_list.sort()
+            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
             exit_status = subprocess.call(rm_cmd, shell=True)
             if exit_status !=0:
                 sys.exit(exit_status)
@@ -188,9 +188,11 @@ def construct_mv_cmd(snapshots_root, host,user, target):
     if host is not None:
         mv_cmd += '"'
 
+    return mv_cmd
+
 
 def run_cmd(cmd):
-    exit_status = subprocess.call(rsync_cmd, shell=True)
+    exit_status = subprocess.call(cmd, shell=True)
     if exit_status != 0:
         sys.exit(exit_status)
 
@@ -239,9 +241,9 @@ if __name__ == "__main__":
     rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
 
     create_dirs(snapshots_root)
-    target = get_target(snapshots_root):
+    target = get_target(snapshots_root)
 
-    mv_cmd = construct_mv_cmd(snapshots_root, host,user, target):
+    mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
 
     run_cmd(rsync_cmd)
     run_cmd(mv_cmd)

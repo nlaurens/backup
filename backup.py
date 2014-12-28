@@ -14,6 +14,7 @@ TODO NIELS:
     Send an email upon error in the log file
     add max number of weekly backups to command line
     Figure out if shell=True is needed (is a security alert).
+    Look at the use of snapshoots_root (seems to be used to often)
 """
 import datetime
 import sys
@@ -151,6 +152,7 @@ def create_dir_structure(snapshots_root):
 # Returns True if it exists, if not found: returns
 # False.
 def dir_exists(path):
+    print path
     if host is None:
         return os.path.isdir(path)
     else:
@@ -187,17 +189,19 @@ def get_target(snapshots_root):
         print 'WARNING DEBUGING DATE STILL ON!!!'
         print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 
-    if today.month == 1 and today.day == 1:
-        target = 'yearly/' + str(today.year)
-    elif today.day == 1:
-        target = 'monthly/' + str(today.month)
-    elif today.isoweekday() == 1:
-        target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+    daily = 'daily/' + str(today.isoweekday())
+    weekly = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+    monthly = 'monthly/' + str(today.month)
+    yearly = 'yearly/' + str(today.year)
 
+    if not dir_exists(snapshots_root +'/'+ yearly + '.snapshot'):
+        return yearly
+    elif not dir_exists(snapshots_root +'/'+ monthly + '.snapshot'):
+        return monthly
+    elif not dir_exists(snapshots_root +'/'+ weekly + '.snapshot'):
+        return weekly
     else:
-        target = 'daily/' + str(today.isoweekday())
-
-    return target
+        return daily
 
 def clean_up(snapshots_root, maxWeeklySnapshots):
     #check if we would exceed the max amount of weekly snapshots:

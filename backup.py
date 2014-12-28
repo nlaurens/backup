@@ -14,7 +14,6 @@ TODO NIELS:
     Send an email upon error in the log file
     add max number of weekly backups to command line
     refactor rm_cmd (from #backups weekly) to a sep. function.
-    Fix bug in weeknumbers (only 1 digit!)
     Figure out if shell=True is needed (is a security alert).
 """
 import datetime

@@ -4,22 +4,17 @@ Usage:
   $ python backup.py SRC DST
   SRC and DST can be ssh or local paths
 
-
   Make sure the DST path already exists, the dir
-  will not be created by the script.
+  will not be created by the script. This is to
+  prevent mistakes.
 
-  NOTE: When backing up via SSH also create the following
-  dir structure:
-  <backup dir>/daily
-           ,,/weekly
-           ,,/monthly
-           ,,/yearly
 
 TODO NIELS:
     Make a log file
     Send an email upon error in the log file
     add max number of weekly backups to command line
     refactor rm_cmd (from #backups weekly) to a sep. function.
+    Test SRC/DST for trailing / (shouldn't be there!)
 
 """
 import datetime
@@ -118,37 +113,59 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
     return rsync_cmd
 
 
+# Checks if a directory <dir> exists on the host
+# Returns True if it exists, if not found: returns
+# False.
 def ssh_dir_exists(dir):
-    ssh_cmd = 'test -d ~/'+dir+'; echo $?'
-    user = 'pi'
-    host = 'minisaurus.no-ip.org'
-    output = subprocess.check_output(['ssh', user+'@'+host,ssh_cmd])
+    cmd = 'test -d '+dir
+    output = run_cmd(cmd, ssh=True, stop_on_error=False)
 
-    if output.strip() == '1':
+    if output == 1:
         return False
-    elif output.strip() =='0':
+    elif output == 0:
         return True
     else:
         sys.exit('ERROR unexpected output in ssh dir checking!' + output)
 
 
-def create_dirs(snapshots_root):
-    if host is None:
-        if not os.path.isdir(snapshots_root + '/daily'):
-            os.makedirs(snapshots_root + '/daily')
+# Runs a shell command <cmd> and returns the result (not output!)
+# set ssh to True if it should be send via SSH to the host
+def run_cmd(cmd, ssh=False, stop_on_error=True):
+    if ssh:
+        if user is not None:
+            server = "%s@" % user
+        server += '%s ' % host
+        cmd = 'ssh ' + server + '"' + cmd + '"'
 
-        if not os.path.isdir(snapshots_root + '/weekly'):
-            os.makedirs(snapshots_root + '/weekly')
+    print 'running CMD'
+    print cmd
 
-        if not os.path.isdir(snapshots_root + '/monthly'):
-            os.makedirs(snapshots_root + '/monthly')
+    result = subprocess.call(cmd, shell=True)
 
-        if not os.path.isdir(snapshots_root + '/yearly'):
-            os.makedirs(snapshots_root + '/yearly')
-
+    if stop_on_error:
+        if result != 0:
+            sys.exit('command failed with: ' + str(result))
+        else:
+            return 0
     else:
-        print 'REMEMBER TO CREATE THE REMOTE DIRS daily, weekly, monthly, yearly'
+        return result
 
+
+def create_dirs(snapshots_root):
+    dirs = []
+    dirs.append(snapshots_root + '/daily')
+    dirs.append(snapshots_root + '/weekly')
+    dirs.append(snapshots_root + '/monthly')
+    dirs.append(snapshots_root + '/yearly')
+
+    if host is None:
+        for path in dirs:
+            if not os.path.isdir(path):
+                os.makedirs(path)
+    else:
+        for path in dirs:
+            if not ssh_dir_exists(path):
+                run_cmd('mkdir ' + path, ssh=True)
 
 def get_target(snapshots_root):
     # Decide where to place the backup (daily, weekly, monthly, etc)
@@ -206,15 +223,6 @@ def construct_mv_cmd(snapshots_root, host,user, target):
 
     return mv_cmd
 
-def run_cmd(cmd):
-    print 'running CMD'
-    print cmd
-
-    exit_status = subprocess.call(cmd, shell=True)
-    if exit_status != 0:
-        sys.exit(exit_status)
-
-    return 0
 
 
 if __name__ == "__main__":
@@ -261,11 +269,6 @@ if __name__ == "__main__":
     create_dirs(snapshots_root)
     target = get_target(snapshots_root)
 
-    mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
-
-    #test = "ssh pi@minisaurus.no-ip.org 'test -f ~/README.txt; echo $?'"
-    #print subprocess.check_output(['ssh', 'pi@minisaurus.no-ip.org'])
-    print subprocess.check_output(['ls'])
-    #run_cmd(test)
+    #mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
     #run_cmd(rsync_cmd)
     #run_cmd(mv_cmd)

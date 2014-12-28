@@ -13,9 +13,8 @@ TODO NIELS:
     Make a log file
     Send an email upon error in the log file
     add max number of weekly backups to command line
-    refactor rm_cmd (from #backups weekly) to a sep. function.
-    Fix bug in weeknumbers (only 1 digit!)
     Figure out if shell=True is needed (is a security alert).
+    Look at the use of snapshoots_root (seems to be used to often)
 """
 import datetime
 import sys
@@ -113,19 +112,6 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
     return rsync_cmd
 
 
-# Checks if a directory <dir> exists on the host
-# Returns True if it exists, if not found: returns
-# False.
-def ssh_dir_exists(dir):
-    cmd = 'test -d '+dir
-    output = run_cmd(cmd, ssh=True, stop_on_error=False)
-
-    if output == 1:
-        return False
-    elif output == 0:
-        return True
-    else:
-        sys.exit('ERROR unexpected output in ssh dir checking!' + output)
 
 
 # Runs a shell command <cmd> and returns the result (not output!)
@@ -151,21 +137,43 @@ def run_cmd(cmd, ssh=False, stop_on_error=True):
         return result
 
 
-def create_dirs(snapshots_root):
+def create_dir_structure(snapshots_root):
     dirs = []
     dirs.append(snapshots_root + '/daily')
     dirs.append(snapshots_root + '/weekly')
     dirs.append(snapshots_root + '/monthly')
     dirs.append(snapshots_root + '/yearly')
 
+    for path in dirs:
+        if not dir_exists(path):
+            dir_create(path)
+
+# Checks if a directory <dir> exists on the host
+# Returns True if it exists, if not found: returns
+# False.
+def dir_exists(path):
+    print path
     if host is None:
-        for path in dirs:
-            if not os.path.isdir(path):
-                os.makedirs(path)
+        return os.path.isdir(path)
     else:
-        for path in dirs:
-            if not ssh_dir_exists(path):
-                run_cmd('mkdir ' + path, ssh=True)
+        cmd = 'test -d '+ path
+        output = run_cmd(cmd, ssh=True, stop_on_error=False)
+
+        if output == 1:
+            return False
+        elif output == 0:
+            return True
+        else:
+            sys.exit('ERROR unexpected output in ssh dir checking!' + output)
+
+
+# Creates a directory <path> on local and ssh host
+def dir_create(path):
+    if host is None:
+        os.makedirs(path)
+    else:
+        run_cmd('mkdir ' + path, ssh=True)
+
 
 def get_target(snapshots_root):
     # Decide where to place the backup (daily, weekly, monthly, etc)
@@ -181,32 +189,35 @@ def get_target(snapshots_root):
         print 'WARNING DEBUGING DATE STILL ON!!!'
         print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
 
-    if today.month == 1 and today.day == 1:
-        target = 'yearly/' + str(today.year)
-    elif today.day == 1:
-        target = 'monthly/' + str(today.month)
-    elif today.isoweekday() == 1:
-        target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+    daily = 'daily/' + str(today.isoweekday())
+    weekly = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+    monthly = 'monthly/' + str(today.month)
+    yearly = 'yearly/' + str(today.year)
 
-        #check if we would exceed the max amount of weekly snapshots:
-        # we don't do this (yet) for remote backups.
-        if host is None:
-            weekly_list = []
-            for name in os.listdir(snapshots_root+'/weekly'):
-                if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
-                    weekly_list.append(name)
-
-            while len(weekly_list) > (maxWeeklySnapshots -1):
-                weekly_list.sort()
-                rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
-                exit_status = subprocess.call(rm_cmd, shell=True)
-                if exit_status !=0:
-                    sys.exit(exit_status)
+    if not dir_exists(snapshots_root +'/'+ yearly + '.snapshot'):
+        return yearly
+    elif not dir_exists(snapshots_root +'/'+ monthly + '.snapshot'):
+        return monthly
+    elif not dir_exists(snapshots_root +'/'+ weekly + '.snapshot'):
+        return weekly
     else:
-        target = 'daily/' + str(today.isoweekday())
+        return daily
 
-    return target
+def clean_up(snapshots_root, maxWeeklySnapshots):
+    #check if we would exceed the max amount of weekly snapshots:
+    # we don't do this (yet) for remote backups.
+    if host is None:
+        weekly_list = []
+        for name in os.listdir(snapshots_root+'/weekly'):
+            if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
+                weekly_list.append(name)
 
+        while len(weekly_list) > (maxWeeklySnapshots -1):
+            weekly_list.sort()
+            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
+            exit_status = subprocess.call(rm_cmd, shell=True)
+            if exit_status !=0:
+                sys.exit(exit_status)
 
 def construct_mv_cmd(snapshots_root, host,user, target):
     mv_cmd = ''
@@ -264,7 +275,7 @@ if __name__ == "__main__":
     rsync_options = construct_rsync_options(options)
     target = get_target(snapshots_root)
 
-    create_dirs(snapshots_root)
+    create_dir_structure(snapshots_root)
 
     rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
     mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
@@ -274,3 +285,5 @@ if __name__ == "__main__":
         run_cmd(mv_cmd, ssh=True)
     else:
         run_cmd(mv_cmd)
+
+    clean_up(snapshots_root, maxWeeklySnapshots)

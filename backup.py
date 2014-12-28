@@ -16,10 +16,10 @@ Usage:
            ,,/yearly
 
 TODO NIELS:
-    Refactor code
     Make a log file
     Send an email upon error in the log file
     add max number of weekly backups to command line
+    refactor rm_cmd (from #backups weekly) to a sep. function.
 
 """
 import datetime
@@ -88,7 +88,6 @@ def construct_rsync_options(options):
         '--itemize-changes', # Output a change-summary for all updates
         '--link-dest=../latest.snapshot', # Make hard-links to the previous snapshot, if any
         '--human-readable', # Output numbers in a human-readable format
-        '--quiet', # Suppress non-error output messages
         # '-F', # Enable per-directory .rsync-filter files.
         ]
     if options.compress:
@@ -118,6 +117,21 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
 
     return rsync_cmd
 
+
+def ssh_dir_exists(dir):
+    ssh_cmd = 'test -d ~/'+dir+'; echo $?'
+    user = 'pi'
+    host = 'minisaurus.no-ip.org'
+    output = subprocess.check_output(['ssh', user+'@'+host,ssh_cmd])
+
+    if output.strip() == '1':
+        return False
+    elif output.strip() =='0':
+        return True
+    else:
+        sys.exit('ERROR unexpected output in ssh dir checking!' + output)
+
+
 def create_dirs(snapshots_root):
     if host is None:
         if not os.path.isdir(snapshots_root + '/daily'):
@@ -131,6 +145,7 @@ def create_dirs(snapshots_root):
 
         if not os.path.isdir(snapshots_root + '/yearly'):
             os.makedirs(snapshots_root + '/yearly')
+
     else:
         print 'REMEMBER TO CREATE THE REMOTE DIRS daily, weekly, monthly, yearly'
 
@@ -141,7 +156,8 @@ def get_target(snapshots_root):
     #      didn't run the day(s) before.
     from datetime import date
 
-    today = date.today()
+    today = date(2014,12,26) # Used for testing the rotation
+    #today = date.today()
     if today.month == 1 and today.day == 1:
         target = 'yearly/' + str(today.year)
     elif today.day == 1:
@@ -190,8 +206,10 @@ def construct_mv_cmd(snapshots_root, host,user, target):
 
     return mv_cmd
 
-
 def run_cmd(cmd):
+    print 'running CMD'
+    print cmd
+
     exit_status = subprocess.call(cmd, shell=True)
     if exit_status != 0:
         sys.exit(exit_status)
@@ -245,5 +263,9 @@ if __name__ == "__main__":
 
     mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
 
-    run_cmd(rsync_cmd)
-    run_cmd(mv_cmd)
+    #test = "ssh pi@minisaurus.no-ip.org 'test -f ~/README.txt; echo $?'"
+    #print subprocess.check_output(['ssh', 'pi@minisaurus.no-ip.org'])
+    print subprocess.check_output(['ls'])
+    #run_cmd(test)
+    #run_cmd(rsync_cmd)
+    #run_cmd(mv_cmd)

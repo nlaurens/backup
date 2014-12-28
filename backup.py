@@ -13,7 +13,6 @@ TODO NIELS:
     Make a log file
     Send an email upon error in the log file
     add max number of weekly backups to command line
-    refactor rm_cmd (from #backups weekly) to a sep. function.
     Figure out if shell=True is needed (is a security alert).
 """
 import datetime
@@ -195,25 +194,26 @@ def get_target(snapshots_root):
     elif today.isoweekday() == 1:
         target = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
 
-        #check if we would exceed the max amount of weekly snapshots:
-        # we don't do this (yet) for remote backups.
-        if host is None:
-            weekly_list = []
-            for name in os.listdir(snapshots_root+'/weekly'):
-                if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
-                    weekly_list.append(name)
-
-            while len(weekly_list) > (maxWeeklySnapshots -1):
-                weekly_list.sort()
-                rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
-                exit_status = subprocess.call(rm_cmd, shell=True)
-                if exit_status !=0:
-                    sys.exit(exit_status)
     else:
         target = 'daily/' + str(today.isoweekday())
 
     return target
 
+def clean_up(snapshots_root, maxWeeklySnapshots):
+    #check if we would exceed the max amount of weekly snapshots:
+    # we don't do this (yet) for remote backups.
+    if host is None:
+        weekly_list = []
+        for name in os.listdir(snapshots_root+'/weekly'):
+            if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
+                weekly_list.append(name)
+
+        while len(weekly_list) > (maxWeeklySnapshots -1):
+            weekly_list.sort()
+            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
+            exit_status = subprocess.call(rm_cmd, shell=True)
+            if exit_status !=0:
+                sys.exit(exit_status)
 
 def construct_mv_cmd(snapshots_root, host,user, target):
     mv_cmd = ''
@@ -281,3 +281,5 @@ if __name__ == "__main__":
         run_cmd(mv_cmd, ssh=True)
     else:
         run_cmd(mv_cmd)
+
+    clean_up(snapshots_root, maxWeeklySnapshots)

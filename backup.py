@@ -177,8 +177,6 @@ def dir_create(path):
 
 def get_target(snapshots_root):
     # Decide where to place the backup (daily, weekly, monthly, etc)
-    # TODO check if we missed a weekly/monthly backup if the script
-    #      didn't run the day(s) before.
     from datetime import date
 
     #today = date(2014,12,30) # Used for testing the rotation

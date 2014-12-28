@@ -76,27 +76,8 @@ def parse_rsync_arg(arg):
 	logger.debug("Path: %s" % path)
 	return user,host,path
 
-def main(SRC,DEST,options):
 
-	maxWeeklySnapshots = 5 # move this to the command line!
-
-	logger = logging.getLogger("backup.main")
-
-	if options.debug:
-		logging.basicConfig(level=logging.DEBUG)
-
-	# Make sure SRC ends with / because this affects how rsync behaves.
-	if not SRC.endswith(os.sep):
-		SRC += os.sep
-
-	logger.debug("SRC is: %s" % SRC)
-	logger.debug("DEST is: %s" % DEST)
-
-	date = datetime.datetime.now().strftime("%Y-%m-%dT%H_%M_%S")
-	logger.debug("date is: %s" % date)
-
-	user,host,snapshots_root = parse_rsync_arg(DEST)
-
+def construct_rsync_options(options):
 	# Construct the list of options to be passed to rsync.
 	rsync_options = ['--archive', # Copy recursively and preserve times, permissions, symlinks, etc.
 		'--partial',
@@ -124,7 +105,10 @@ def main(SRC,DEST,options):
 		for pattern in options.exclude:
 			rsync_options.append("--exclude '%s'" % pattern)
 
-	# Construct the rsync command.
+    return rsync_options
+
+
+def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
 	rsync_cmd = "rsync %s '%s' " % (' '.join(rsync_options),SRC)
 	if host is not None:
 		if user is not None:
@@ -132,8 +116,9 @@ def main(SRC,DEST,options):
 		rsync_cmd += "%s:" % host
 	rsync_cmd += "%s/incomplete.snapshot" % snapshots_root
 
+    return rsync_cmd
 
-    #Create directory structure for backups (if non existend) only local
+def create_dirs(snapshots_root):
     if host is None:
         if not os.path.isdir(snapshots_root + '/daily'):
             os.makedirs(snapshots_root + '/daily')
@@ -149,6 +134,8 @@ def main(SRC,DEST,options):
     else:
         print 'REMEMBER TO CREATE THE REMOTE DIRS daily, weekly, monthly, yearly'
 
+
+def get_target(snapshots_root):
 	# Decide where to place the backup (daily, weekly, monthly, etc)
     # TODO check if we missed a weekly/monthly backup if the script
     #      didn't run the day(s) before.
@@ -177,6 +164,10 @@ def main(SRC,DEST,options):
 	else:
 		target = 'daily/' + str(today.isoweekday())
 
+    return target
+
+
+def construct_mv_cmd(snapshots_root, host,user, target):
 	#construct move commands:
 	if host is not None:
 		mv_cmd = 'ssh '
@@ -197,14 +188,14 @@ def main(SRC,DEST,options):
 	if host is not None:
 		mv_cmd += '"'
 
+
+def run_cmd(cmd):
 	exit_status = subprocess.call(rsync_cmd, shell=True)
 	if exit_status != 0:
 		sys.exit(exit_status)
 
-	if not options.debug:
-		exit_status = subprocess.call(mv_cmd, shell=True)
-		if exit_status != 0:
-			sys.exit(exit_status)
+    return 0
+
 
 if __name__ == "__main__":
 	from optparse import OptionParser
@@ -225,4 +216,32 @@ if __name__ == "__main__":
 		sys.exit(parser.get_usage())
 	SRC = args[0]
 	DEST = args[1]
-	main(SRC,DEST,options)
+
+	maxWeeklySnapshots = 5 # move this to the command line!
+
+	logger = logging.getLogger("backup.main")
+
+	if options.debug:
+		logging.basicConfig(level=logging.DEBUG)
+
+	# Make sure SRC ends with / because this affects how rsync behaves.
+	if not SRC.endswith(os.sep):
+		SRC += os.sep
+
+	logger.debug("SRC is: %s" % SRC)
+	logger.debug("DEST is: %s" % DEST)
+
+	date = datetime.datetime.now().strftime("%Y-%m-%dT%H_%M_%S")
+	logger.debug("date is: %s" % date)
+
+	user,host,snapshots_root = parse_rsync_arg(DEST)
+    rsync_options = construct_rsync_options(options)
+    rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
+
+    create_dirs(snapshots_root)
+    target = get_target(snapshots_root):
+
+    mv_cmd = construct_mv_cmd(snapshots_root, host,user, target):
+
+    run_cmd(rsync_cmd)
+    run_cmd(mv_cmd)

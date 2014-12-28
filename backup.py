@@ -112,19 +112,6 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
     return rsync_cmd
 
 
-# Checks if a directory <dir> exists on the host
-# Returns True if it exists, if not found: returns
-# False.
-def ssh_dir_exists(dir):
-    cmd = 'test -d '+dir
-    output = run_cmd(cmd, ssh=True, stop_on_error=False)
-
-    if output == 1:
-        return False
-    elif output == 0:
-        return True
-    else:
-        sys.exit('ERROR unexpected output in ssh dir checking!' + output)
 
 
 # Runs a shell command <cmd> and returns the result (not output!)
@@ -150,21 +137,42 @@ def run_cmd(cmd, ssh=False, stop_on_error=True):
         return result
 
 
-def create_dirs(snapshots_root):
+def create_dir_structure(snapshots_root):
     dirs = []
     dirs.append(snapshots_root + '/daily')
     dirs.append(snapshots_root + '/weekly')
     dirs.append(snapshots_root + '/monthly')
     dirs.append(snapshots_root + '/yearly')
 
+    for path in dirs:
+        if not dir_exists(path):
+            dir_create(path)
+
+# Checks if a directory <dir> exists on the host
+# Returns True if it exists, if not found: returns
+# False.
+def dir_exists(path):
     if host is None:
-        for path in dirs:
-            if not os.path.isdir(path):
-                os.makedirs(path)
+        return os.path.isdir(path)
     else:
-        for path in dirs:
-            if not ssh_dir_exists(path):
-                run_cmd('mkdir ' + path, ssh=True)
+        cmd = 'test -d '+ path
+        output = run_cmd(cmd, ssh=True, stop_on_error=False)
+
+        if output == 1:
+            return False
+        elif output == 0:
+            return True
+        else:
+            sys.exit('ERROR unexpected output in ssh dir checking!' + output)
+
+
+# Creates a directory <path> on local and ssh host
+def dir_create(path):
+    if host is None:
+        os.makedirs(path)
+    else:
+        run_cmd('mkdir ' + path, ssh=True)
+
 
 def get_target(snapshots_root):
     # Decide where to place the backup (daily, weekly, monthly, etc)
@@ -263,7 +271,7 @@ if __name__ == "__main__":
     rsync_options = construct_rsync_options(options)
     target = get_target(snapshots_root)
 
-    create_dirs(snapshots_root)
+    create_dir_structure(snapshots_root)
 
     rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
     mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)

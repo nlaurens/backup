@@ -12,9 +12,6 @@ Usage:
 TODO NIELS:
     Make a log file
     Send an email upon error in the log file
-    add max number of weekly backups to command line
-    Figure out if shell=True is needed (is a security alert).
-    Look at the use of snapshoots_root (seems to be used to often)
 """
 import datetime
 import sys
@@ -29,6 +26,7 @@ def is_remote(arg):
     """
     # If it has a : before the first / then it's a remote path.
     return ':' in arg.split('/')[0]
+
 
 def parse_rsync_arg(arg):
     """Parse the given SRC or DEST argument and return tuple containing its
@@ -112,8 +110,6 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
     return rsync_cmd
 
 
-
-
 # Runs a shell command <cmd> and returns the result (not output!)
 # set ssh to True if it should be send via SSH to the host
 def run_cmd(cmd, ssh=False, stop_on_error=True):
@@ -148,11 +144,11 @@ def create_dir_structure(snapshots_root):
         if not dir_exists(path):
             dir_create(path)
 
+
 # Checks if a directory <dir> exists on the host
 # Returns True if it exists, if not found: returns
 # False.
 def dir_exists(path):
-    print path
     if host is None:
         return os.path.isdir(path)
     else:
@@ -201,6 +197,7 @@ def get_target(snapshots_root):
     else:
         return daily
 
+
 def clean_up(snapshots_root, maxWeeklySnapshots):
     #check if we would exceed the max amount of weekly snapshots:
     # we don't do this (yet) for remote backups.
@@ -216,6 +213,7 @@ def clean_up(snapshots_root, maxWeeklySnapshots):
             exit_status = subprocess.call(rm_cmd, shell=True)
             if exit_status !=0:
                 sys.exit(exit_status)
+
 
 def construct_mv_cmd(snapshots_root, host,user, target):
     mv_cmd = ''
@@ -252,7 +250,7 @@ if __name__ == "__main__":
     SRC = args[0]
     DEST = args[1]
 
-    maxWeeklySnapshots = 5 # move this to the command line!
+    maxWeeklySnapshots = 5
 
     logger = logging.getLogger("backup.main")
 

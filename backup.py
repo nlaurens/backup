@@ -11,12 +11,14 @@ Usage:
 
 TODO NIELS:
     Send an email upon error in the log file
+    write a simple BACKUP.log to the DST with date of backup.
 """
 from datetime import date
 import sys
 import os
 import logging
 import subprocess
+import glob
 
 
 def is_remote(arg):
@@ -103,7 +105,7 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
 
 # Runs a shell command <cmd> and returns the result (not output!)
 # set ssh to True if it should be send via SSH to the host
-def run_cmd(cmd, ssh=False, stop_on_error=True):
+def run_cmd(cmd, ssh=False):
     if ssh:
         server = ''
         if user is not None:
@@ -112,16 +114,16 @@ def run_cmd(cmd, ssh=False, stop_on_error=True):
         cmd = 'ssh ' + server + '"' + cmd + '"'
 
     logging.info('run_cmd: ' + cmd)
-    result = subprocess.call(cmd, shell=True)
+    print 'running cmd'
+    print cmd
+    try:
+        output = subprocess.check_output(cmd, shell=True)
+    except subprocess.CalledProcessError, error:
+        logging.critical('run_cmd FAILED: ' + cmd)
+        logging.critical('run_cmd result: ' + str(error))
+        sys.exit('command failed with: ' + str(error))
 
-    if stop_on_error:
-        if result != 0:
-            logging.critical('run_cmd FAILED: ' + cmd)
-            sys.exit('command failed with: ' + str(result))
-        else:
-            return 0
-    else:
-        return result
+    return output
 
 
 def create_dir_structure(snapshots_root):
@@ -134,22 +136,19 @@ def create_dir_structure(snapshots_root):
 
 
 # Checks if a directory <dir> exists on the host
-# Returns True if it exists, if not found: returns
-# False.
+# Returns a list of all the matches.
+# Allows patterns
 def dir_exists(path):
     if host is None:
-        return os.path.isdir(path)
+        return glob.glob(path)
     else:
-        cmd = 'test -d ' + path
-        output = run_cmd(cmd, ssh=True, stop_on_error=False)
-
-        if output == 1:
-            return False
-        elif output == 0:
-            return True
+        split = path.split('/')
+        cmd = 'find ' + '/'.join(split[:-1]) + ' -name \"' + split[-1] + '"'
+        output = run_cmd(cmd, ssh=True).strip()
+        if output == '':
+            return []
         else:
-            logging.critical('dir_exists failed on ssh dir checking: ' + str(output))
-            sys.exit('ERROR unexpected output in ssh dir checking!' + str(output))
+            return output.split('\n')
 
 
 # Creates a directory <path> on local and ssh host
@@ -162,9 +161,14 @@ def dir_create(path):
 
 
 # Decide where to place the backup (daily, weekly, monthly, etc)
+# Yearly: 2014-<date>
+# Monthly: 1-<date> .. 12-<date>
+# Weekly: 1-<date> .. 5-<date> (we take: week# % 5)
 def get_target(snapshots_root):
-    # today = date(2014,12,30) # Used for testing the rotation
+    # today = date(2014,9,9) # Used for testing the rotation
     today = date.today()
+    isotoday = today.isocalendar()
+    strtoday = '%d%02d%02d' % (today.year, today.month, today.day)
 
     if today != date.today():
         print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
@@ -172,48 +176,40 @@ def get_target(snapshots_root):
         print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
         logging.warning('DEBUGGING DATE STILL ON!')
 
-    daily = 'daily/' + str(today.isoweekday())
-    weekly = 'weekly/' + str(today.year) + str(today.isocalendar()[
-        1])  # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
-    monthly = 'monthly/' + str(today.month)
-    yearly = 'yearly/' + str(today.year)
+    previous_yearly = dir_exists(snapshots_root + '/yearly/%d-*.snapshot' % isotoday[0])
+    if not previous_yearly:
+        return 'yearly/%d-%s' % (isotoday[0], strtoday)
 
-    if not dir_exists(snapshots_root + '/' + yearly + '.snapshot'):
-        return yearly
-    elif not dir_exists(snapshots_root + '/' + monthly + '.snapshot'):
-        return monthly
-    elif not dir_exists(snapshots_root + '/' + weekly + '.snapshot'):
-        return weekly
+    previous_monthly = dir_exists(snapshots_root + '/monthly/%02d-*.snapshot' % today.month)
+    if not previous_monthly:
+        return 'monthly/%02d-%s' % (today.month, strtoday)
     else:
-        return daily
+        if len(previous_monthly) > 1:
+            logging.critical('More monthly snapshots than expected (1 for every month)')
+            sys.exit('More monthly snapshots than expected (1 for every month)')
+        if previous_monthly[0].split('/')[-1][3:7] != str(isotoday[0]):
+            return 'monthly/%02d-%s' % (today.month, strtoday)
 
+    previous_weekly = dir_exists(snapshots_root + '/weekly/%d-*.snapshot' % (isotoday[1] % 5 + 1))
+    if not previous_weekly:
+        return 'weekly/%d-%s' % (isotoday[1] % 5 + 1, strtoday)
+    else:
+        if len(previous_weekly) > 1:
+            logging.critical('More weekly snapshots than expected')
+            sys.exit('More monthly snapshots than expected')
+        if int(previous_weekly[0].split('/')[-1][6:8]) != today.month:
+            return 'weekly/%d-%s' % (isotoday[1] % 5 + 1, strtoday)
 
-def clean_up(snapshots_root, maxweeklysnapshots):
-    # check if we would exceed the max amount of weekly snapshots:
-    # we don't do this (yet) for remote backups.
-    if host is None:
-        weekly_list = []
-        for name in os.listdir(snapshots_root + '/weekly'):
-            if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
-                weekly_list.append(name)
-
-        while len(weekly_list) > (maxweeklysnapshots - 1):
-            weekly_list.sort()
-            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root, weekly_list.pop(0))
-            logging.info('clean_up: ' + rm_cmd)
-            exit_status = subprocess.call(rm_cmd, shell=True)
-            if exit_status != 0:
-                logging.critical('clean_up failed ' + str(exit_status))
-                sys.exit(exit_status)
+    return 'daily/%d-%s' % (isotoday[2], strtoday)
 
 
 def construct_mv_cmd(snapshots_root, target):
     mv_cmd = ''
 
-    # remove the old source if it already exist
-    if os.path.isdir(snapshots_root + '/' + target + '.snapshot'):
-        mv_cmd += 'rm -rf %s/%s.snapshot &&' % (snapshots_root, target)
+    # remove the old source using wildcards
+    target_remove = target[:-8] + '*'
 
+    mv_cmd += 'rm -rf %s/%s.snapshot &&' % (snapshots_root, target_remove)
     mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root, snapshots_root, target)
     mv_cmd += "&& rm -f %s/latest.snapshot " % snapshots_root
     mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (target, snapshots_root)
@@ -258,6 +254,7 @@ if __name__ == "__main__":
         SRC += os.sep
 
     user, host, snapshots_root = parse_rsync_arg(DEST)
+    create_dir_structure(snapshots_root)
     rsync_options = construct_rsync_options(options)
     backup_target = get_target(snapshots_root)
     rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
@@ -269,11 +266,9 @@ if __name__ == "__main__":
     logging.info("user: %s" % user)
     logging.info("target: %s" % backup_target)
 
-    create_dir_structure(snapshots_root)
     run_cmd(rsync_cmd)
     if host is not None:
         run_cmd(mv_cmd, ssh=True)
     else:
         run_cmd(mv_cmd)
-    clean_up(snapshots_root, maxWeeklySnapshots)
     logging.info('** Finished run **')

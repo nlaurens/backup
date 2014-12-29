@@ -12,7 +12,7 @@ repeatedly creates incremental, snapshot backups of SRC inside DEST:
 		latest.snapshot/  - Link to the latest snapshot taken;
         yearly/..         - Snapshots beginning of each year;
         monthly/..        - Snapshots Jan - Dec;
-        weekly/..         - Snapshots last 5 weeks (taken on Mondays);
+        weekly/..         - Snapshots last 5 weeks (usually from Monday);
         daily/..          - Snapshots Tuesday till Sunday
 
 Each snapshot directory contains a complete copy of the SRC directory (but

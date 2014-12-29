@@ -10,14 +10,14 @@ Usage:
 
 
 TODO NIELS:
-    Make a log file
     Send an email upon error in the log file
 """
-import datetime
+from datetime import date
 import sys
 import os
 import logging
 import subprocess
+
 
 def is_remote(arg):
     """Return True if the given SRC or DEST argument specifies a remote path,
@@ -44,52 +44,43 @@ def parse_rsync_arg(arg):
                 '/media/BACKUP' in the local path '/media/BACKUP'.
 
     """
-    logger = logging.getLogger("backup.parse_rsync_arg")
-    logger.debug("Parsing rsync arg %s" % arg)
-
     if is_remote(arg):
-        logger.debug("This is a remote path")
-        before_first_colon, after_first_colon = arg.split(':',1)
+        before_first_colon, after_first_colon = arg.split(':', 1)
         if '@' in before_first_colon:
-            logger.debug("User is specified in the path")
             user = before_first_colon.split('@')[0]
         else:
-            logger.debug("User is not specified in the path")
             user = None
         host = before_first_colon.split('@')[-1]
         path = after_first_colon
     else:
-        logger.debug("This is a local path.")
         user = None
         host = None
         path = os.path.abspath(os.path.expanduser(arg.strip()))
-    logger.debug("User: %s" % user)
-    logger.debug("Host: %s" % host)
-    logger.debug("Path: %s" % path)
-    return user,host,path
+    return user, host, path
 
 
 def construct_rsync_options(options):
     # Construct the list of options to be passed to rsync.
-    rsync_options = ['--archive', # Copy recursively and preserve times, permissions, symlinks, etc.
-        '--partial',
-        '--partial-dir=partially_transferred_files', # Keep partially transferred files if the transfer is interrupted
-        '--one-file-system', # Don't cross filesystem boundaries
-        '--delete', # Delete extraneous files from dest dirs
-        '--delete-excluded', # Also delete excluded files from dest dirs
-        '--itemize-changes', # Output a change-summary for all updates
-        '--link-dest=../latest.snapshot', # Make hard-links to the previous snapshot, if any
-        '--human-readable', # Output numbers in a human-readable format
-        # '-F', # Enable per-directory .rsync-filter files.
-        ]
+    rsync_options = ['--archive',  # Copy recursively and preserve times, permissions, symlinks, etc.
+                     '--partial',
+                     '--partial-dir=partially_transferred_files',
+                     # Keep partially transferred files if the transfer is interrupted
+                     '--one-file-system',  # Don't cross filesystem boundaries
+                     '--delete',  # Delete extraneous files from dest dirs
+                     '--delete-excluded',  # Also delete excluded files from dest dirs
+                     '--itemize-changes',  # Output a change-summary for all updates
+                     '--link-dest=../latest.snapshot',  # Make hard-links to the previous snapshot, if any
+                     '--human-readable',  # Output numbers in a human-readable format
+                     # '-F', # Enable per-directory .rsync-filter files.
+                     ]
     if options.compress:
-        rsync_options.append('--compress') # Compress files during transfer
+        rsync_options.append('--compress')  # Compress files during transfer
     if options.fuzzy:
-        rsync_options.append('--fuzzy') # Look for basis files for any destination files that are missing
+        rsync_options.append('--fuzzy')  # Look for basis files for any destination files that are missing
     if options.progress:
-        rsync_options.append('--progress') # Print progress while transferring files
+        rsync_options.append('--progress')  # Print progress while transferring files
     if os.path.isfile(os.path.expanduser("~/.backup/excludes")):
-        rsync_options.append('--exclude-from=$HOME/.backup/excludes') # Read exclude patterns from file
+        rsync_options.append('--exclude-from=$HOME/.backup/excludes')  # Read exclude patterns from file
     if options.debug:
         rsync_options.append('--dry-run')
     if options.exclude is not None:
@@ -100,7 +91,7 @@ def construct_rsync_options(options):
 
 
 def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
-    rsync_cmd = "rsync %s '%s' " % (' '.join(rsync_options),SRC)
+    rsync_cmd = "rsync %s '%s' " % (' '.join(rsync_options), SRC)
     if host is not None:
         if user is not None:
             rsync_cmd += "%s@" % user
@@ -114,18 +105,18 @@ def construct_rsync_cmd(rsync_options, host, user, snapshots_root):
 # set ssh to True if it should be send via SSH to the host
 def run_cmd(cmd, ssh=False, stop_on_error=True):
     if ssh:
+        server = ''
         if user is not None:
-            server = "%s@" % user
+            server += "%s@" % user
         server += '%s ' % host
         cmd = 'ssh ' + server + '"' + cmd + '"'
 
-    print 'running CMD'
-    print cmd
-
+    logging.info('run_cmd: ' + cmd)
     result = subprocess.call(cmd, shell=True)
 
     if stop_on_error:
         if result != 0:
+            logging.critical('run_cmd FAILED: ' + cmd)
             sys.exit('command failed with: ' + str(result))
         else:
             return 0
@@ -134,11 +125,8 @@ def run_cmd(cmd, ssh=False, stop_on_error=True):
 
 
 def create_dir_structure(snapshots_root):
-    dirs = []
-    dirs.append(snapshots_root + '/daily')
-    dirs.append(snapshots_root + '/weekly')
-    dirs.append(snapshots_root + '/monthly')
-    dirs.append(snapshots_root + '/yearly')
+    dirs = [snapshots_root + '/daily', snapshots_root + '/weekly', snapshots_root + '/monthly',
+            snapshots_root + '/yearly']
 
     for path in dirs:
         if not dir_exists(path):
@@ -152,7 +140,7 @@ def dir_exists(path):
     if host is None:
         return os.path.isdir(path)
     else:
-        cmd = 'test -d '+ path
+        cmd = 'test -d ' + path
         output = run_cmd(cmd, ssh=True, stop_on_error=False)
 
         if output == 1:
@@ -160,126 +148,132 @@ def dir_exists(path):
         elif output == 0:
             return True
         else:
-            sys.exit('ERROR unexpected output in ssh dir checking!' + output)
+            logging.critical('dir_exists failed on ssh dir checking: ' + str(output))
+            sys.exit('ERROR unexpected output in ssh dir checking!' + str(output))
 
 
 # Creates a directory <path> on local and ssh host
 def dir_create(path):
     if host is None:
+        logging.info('dir_create: ' + path)
         os.makedirs(path)
     else:
         run_cmd('mkdir ' + path, ssh=True)
 
 
+# Decide where to place the backup (daily, weekly, monthly, etc)
 def get_target(snapshots_root):
-    # Decide where to place the backup (daily, weekly, monthly, etc)
-    from datetime import date
-
-    #today = date(2014,12,30) # Used for testing the rotation
+    # today = date(2014,12,30) # Used for testing the rotation
     today = date.today()
 
     if today != date.today():
         print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
-        print 'WARNING DEBUGING DATE STILL ON!!!'
+        print 'WARNING DEBUGGING DATE STILL ON!!!'
         print '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+        logging.warning('DEBUGGING DATE STILL ON!')
 
     daily = 'daily/' + str(today.isoweekday())
-    weekly = 'weekly/' + str(today.year)  + str(today.isocalendar()[1]) # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
+    weekly = 'weekly/' + str(today.year) + str(today.isocalendar()[
+        1])  # year + weeknumber (so we can easily see form the dir name what is the oldest snapshot)
     monthly = 'monthly/' + str(today.month)
     yearly = 'yearly/' + str(today.year)
 
-    if not dir_exists(snapshots_root +'/'+ yearly + '.snapshot'):
+    if not dir_exists(snapshots_root + '/' + yearly + '.snapshot'):
         return yearly
-    elif not dir_exists(snapshots_root +'/'+ monthly + '.snapshot'):
+    elif not dir_exists(snapshots_root + '/' + monthly + '.snapshot'):
         return monthly
-    elif not dir_exists(snapshots_root +'/'+ weekly + '.snapshot'):
+    elif not dir_exists(snapshots_root + '/' + weekly + '.snapshot'):
         return weekly
     else:
         return daily
 
 
-def clean_up(snapshots_root, maxWeeklySnapshots):
-    #check if we would exceed the max amount of weekly snapshots:
+def clean_up(snapshots_root, maxweeklysnapshots):
+    # check if we would exceed the max amount of weekly snapshots:
     # we don't do this (yet) for remote backups.
     if host is None:
         weekly_list = []
-        for name in os.listdir(snapshots_root+'/weekly'):
+        for name in os.listdir(snapshots_root + '/weekly'):
             if os.path.isdir(os.path.join(snapshots_root + '/weekly', name)):
                 weekly_list.append(name)
 
-        while len(weekly_list) > (maxWeeklySnapshots -1):
+        while len(weekly_list) > (maxweeklysnapshots - 1):
             weekly_list.sort()
-            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root,weekly_list.pop(0))
+            rm_cmd = 'rm -rf %s/weekly/%s' % (snapshots_root, weekly_list.pop(0))
+            logging.info('clean_up: ' + rm_cmd)
             exit_status = subprocess.call(rm_cmd, shell=True)
-            if exit_status !=0:
+            if exit_status != 0:
+                logging.critical('clean_up failed ' + str(exit_status))
                 sys.exit(exit_status)
 
 
-def construct_mv_cmd(snapshots_root, host,user, target):
+def construct_mv_cmd(snapshots_root, target):
     mv_cmd = ''
 
-    #remove the old source if it already exist
+    # remove the old source if it already exist
     if os.path.isdir(snapshots_root + '/' + target + '.snapshot'):
-        mv_cmd += 'rm -rf %s/%s.snapshot &&' % (snapshots_root,target)
+        mv_cmd += 'rm -rf %s/%s.snapshot &&' % (snapshots_root, target)
 
-    mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root,snapshots_root,target)
+    mv_cmd += "mv %s/incomplete.snapshot %s/%s.snapshot " % (snapshots_root, snapshots_root, target)
     mv_cmd += "&& rm -f %s/latest.snapshot " % snapshots_root
-    mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (target,snapshots_root)
+    mv_cmd += "&& ln -s %s.snapshot %s/latest.snapshot" % (target, snapshots_root)
 
     return mv_cmd
 
 
-
 if __name__ == "__main__":
     from optparse import OptionParser
+
     parser = OptionParser(usage="usage: %prog [options] SRC DEST")
-    parser.add_option('-d','--debug','-n','--dry-run', dest='debug', action='store_true', default=False,
-            help='Perform a trial-run with no changes made (pass the --dry-run option to rsync)')
+    parser.add_option('-d', '--debug', '-n', '--dry-run', dest='debug', action='store_true', default=False,
+                      help='Perform a trial-run with no changes made (pass the --dry-run option to rsync)')
     parser.add_option('--no-compress', dest='compress', action='store_false', default=True,
-            help='Do not compress file data during transfer (do not pass the --compress argument to rsync)')
+                      help='Do not compress file data during transfer (do not pass the --compress argument to rsync)')
     parser.add_option('--no-fuzzy', dest='fuzzy', action='store_false', default=True,
-            help='Do not look for basis files for destination files that are missing (do not pass the --fuzzy argument to rsync)')
+                      help='Do not look for basis files for destination files that are missing '
+                           '(do not pass the --fuzzy argument to rsync)')
     parser.add_option('--no-progress', dest='progress', action='store_false', default=True,
-            help='Do not show progress during transfer (do not pass the --progress argument to rsync)')
-    parser.add_option('--exclude', type='string', dest='exclude', metavar="PATTERN",  action='append',
-            help="Exclude files matching PATTERN, e.g. --exclude '.git/*' (see the --exclude option in `man rsync`)")
-    (options,args) = parser.parse_args()
+                      help='Do not show progress during transfer (do not pass the --progress argument to rsync)')
+    parser.add_option('--exclude', type='string', dest='exclude', metavar="PATTERN", action='append',
+                      help="Exclude files matching PATTERN, e.g. --exclude '.git/*' "
+                           "(see the --exclude option in `man rsync`)")
+    (options, args) = parser.parse_args()
 
     if len(args) != 2:
         sys.exit(parser.get_usage())
     SRC = args[0]
     DEST = args[1]
 
-    maxWeeklySnapshots = 5
-
-    logger = logging.getLogger("backup.main")
-
     if options.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(filename='backup.log', level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(message)s',
+                            datefmt='%Y/%m/%d %H:%M:%S')
+    else:
+        logging.basicConfig(filename='backup.log', level=logging.INFO, format='%(asctime)s %(levelname)s:%(message)s',
+                            datefmt='%Y/%m/%d %H:%M:%S')
+    logging.info('** Started run **')
+    maxWeeklySnapshots = 5
 
     # Make sure SRC ends with / because this affects how rsync behaves.
     if not SRC.endswith(os.sep):
         SRC += os.sep
 
-    logger.debug("SRC is: %s" % SRC)
-    logger.debug("DEST is: %s" % DEST)
-
-    date = datetime.datetime.now().strftime("%Y-%m-%dT%H_%M_%S")
-    logger.debug("date is: %s" % date)
-
-    user,host,snapshots_root = parse_rsync_arg(DEST)
+    user, host, snapshots_root = parse_rsync_arg(DEST)
     rsync_options = construct_rsync_options(options)
-    target = get_target(snapshots_root)
+    backup_target = get_target(snapshots_root)
+    rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
+    mv_cmd = construct_mv_cmd(snapshots_root, backup_target)
+
+    logging.info("src: %s" % SRC)
+    logging.info("dest: %s" % DEST)
+    logging.info("host: %s" % host)
+    logging.info("user: %s" % user)
+    logging.info("target: %s" % backup_target)
 
     create_dir_structure(snapshots_root)
-
-    rsync_cmd = construct_rsync_cmd(rsync_options, host, user, snapshots_root)
-    mv_cmd = construct_mv_cmd(snapshots_root, host,user, target)
-
     run_cmd(rsync_cmd)
     if host is not None:
         run_cmd(mv_cmd, ssh=True)
     else:
         run_cmd(mv_cmd)
-
     clean_up(snapshots_root, maxWeeklySnapshots)
+    logging.info('** Finished run **')

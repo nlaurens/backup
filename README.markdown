@@ -42,8 +42,9 @@ Either SRC or DEST (but not both) can be a remote directory, e.g.:
 `you@yourdomain.org:/path/to/snapshots`.
 
 Options:
-   --debug        Performs a trial-run; nothing is synced.
-   --no-compress  Does not compress files during transfer
-   --no-fuzzy     Do not look for missing basis files on DEST
-   --no-progress  Does not show progress during transfer
-   --exclude      Exclude file matching <PATTERN> (see rsync man)
+
+	--debug        Performs a trial-run; nothing is synced.
+	--no-compress  Does not compress files during transfer
+	--no-fuzzy     Do not look for missing basis files on DEST
+	--no-progress  Does not show progress during transfer
+	--exclude      Exclude file matching <PATTERN> (see rsync man)

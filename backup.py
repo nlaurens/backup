@@ -262,8 +262,10 @@ if __name__ == "__main__":
 
     logging.info("src: %s" % SRC)
     logging.info("dest: %s" % DEST)
-    logging.info("host: %s" % host)
-    logging.info("user: %s" % user)
+    if host:
+        logging.info("host: %s" % host)
+    if user:
+        logging.info("user: %s" % user)
     logging.info("target: %s" % backup_target)
 
     run_cmd(rsync_cmd)

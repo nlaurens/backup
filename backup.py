@@ -143,7 +143,7 @@ def dir_exists(path):
         return glob.glob(path)
     else:
         split = path.split('/')
-        cmd = 'find ' + '/'.join(split[:-1]) + ' -name \"' + split[-1] + '"'
+        cmd = 'find ' + '/'.join(split[:-1]) + ' -name \"' + split[-1] + '" -maxdepth 1'
         output = run_cmd(cmd, ssh=True).strip()
         if output == '':
             return []
